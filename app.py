@@ -1,0 +1,157 @@
+import os
+import base64
+from pathlib import Path
+
+from dotenv import load_dotenv
+import streamlit as st
+
+from meeting_core import transcribe_audio, analyze_meeting, pretty_action_items
+
+# --------- Helper to build markdown export ---------
+def build_markdown_export(transcript: str, insights: dict) -> str:
+    """
+    Build a markdown export of the meeting notes.
+    """
+    lines = []
+    lines.append("# 💡 Meeting Whisperer Notes\n")
+    lines.append("## Summary\n")
+    lines.append(insights.get("summary", "") + "\n")
+
+    lines.append("## Decisions\n")
+    for d in insights.get("decisions", []):
+        lines.append(f"- {d}")
+    lines.append("")
+
+    lines.append("## Action Items\n")
+    lines.append(pretty_action_items(insights.get("action_items", [])))
+    lines.append("")
+
+    lines.append("## Risks & Open Questions\n")
+    for r in insights.get("risks_open_questions", []):
+        lines.append(f"- {r}")
+    lines.append("")
+
+    lines.append("## Full Transcript\n")
+    lines.append("```")
+    lines.append(transcript)
+    lines.append("```")
+
+    return "\n".join(lines)
+
+
+# --------- Page config MUST be first Streamlit call ---------
+st.set_page_config(
+    page_title="Meeting Whisperer",
+    page_icon="💡",
+    layout="wide"
+)
+
+# --------- Background image ---------
+def add_background(image_path: str):
+    image_file = Path(image_path)
+    if not image_file.exists():
+        st.warning(f"Background image not found: {image_path}")
+        return
+
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+
+    css = f"""
+    <style>
+        .stApp {{
+            background: url("data:image/jpg;base64,{encoded}") no-repeat center center fixed;
+            background-size: cover;
+        }}
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
+add_background("Assets/background.jpg")
+
+# --------- Setup / API key ---------
+load_dotenv()
+if not os.getenv("OPENAI_API_KEY"):
+    st.error("Please set OPENAI_API_KEY in a .env or environment variable.")
+    st.stop()
+
+# --------- Sidebar ---------
+st.sidebar.title("💡 Meeting Whisperer")
+st.sidebar.markdown(
+    "Upload a recording of your meeting and get a clean summary, "
+    "decisions, and action items."
+)
+temperature = st.sidebar.slider("Creativity (for wording only)", 0.0, 1.0, 0.2)
+
+# --------- Main layout ---------
+st.title("💡 Meeting Whisperer")
+st.caption("Turn messy meetings into clean notes and action items.")
+
+uploaded_file = st.file_uploader(
+    "Upload audio (mp3, wav, m4a, etc.)",
+    type=["mp3", "wav", "m4a", "mp4", "mpeg", "ogg"]
+)
+
+if uploaded_file is not None:
+    st.audio(uploaded_file)
+
+    if st.button("Transcribe & Analyze", type="primary"):
+        # --- Transcription ---
+        with st.spinner("Transcribing audio..."):
+            transcript = transcribe_audio(
+                file_bytes=uploaded_file.read(),
+                filename=uploaded_file.name
+            )
+
+        # --- Transcript in its own scrollable window ---
+        st.subheader("📝 Transcript")
+        st.text_area(
+            label="Transcript",
+            value=transcript,
+            height=350,                   # adjust height as you like
+            disabled=True,                # read-only
+            label_visibility="collapsed"  # hide duplicate label text
+        )
+
+        # --- Meeting analysis ---
+        with st.spinner("Analyzing meeting..."):
+            insights = analyze_meeting(transcript)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📌 Summary")
+            st.write(insights.get("summary", ""))
+
+            st.subheader("📋 Decisions")
+            decisions = insights.get("decisions", [])
+            if decisions:
+                for d in decisions:
+                    st.markdown(f"- {d}")
+            else:
+                st.caption("No explicit decisions detected.")
+
+        with col2:
+            st.subheader("✅ Action Items")
+            action_items_md = pretty_action_items(insights.get("action_items", []))
+            if action_items_md:
+                st.markdown(action_items_md)
+            else:
+                st.caption("No action items detected.")
+
+            st.subheader("⚠️ Risks & Open Questions")
+            risks = insights.get("risks_open_questions", [])
+            if risks:
+                for r in risks:
+                    st.markdown(f"- {r}")
+            else:
+                st.caption("No major risks or open questions detected.")
+
+        # --- Export as Markdown ---
+        st.download_button(
+            "Download summary as Markdown",
+            data=build_markdown_export(transcript, insights),
+            file_name="meeting_notes.md",
+            mime="text/markdown"
+        )
+
+
