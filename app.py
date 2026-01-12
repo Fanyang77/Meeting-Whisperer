@@ -83,25 +83,13 @@ temperature = st.sidebar.slider("Creativity (for wording only)", 0.0, 1.0, 0.2)
 st.title("💡 Meeting Whisperer")
 st.caption("Turn messy meetings into clean notes and action items.")
 
-# --- Demo audio controls ---
+# --- Demo audio (best UX for recruiters) ---
 DEMO_AUDIO_PATH = Path("Assets/demo_audio.mp3")
 
-with st.expander("🎧 Demo audio (for recruiters)", expanded=True):
-    cols = st.columns([1, 1, 2])
-    with cols[0]:
-        use_demo = st.button("Use demo audio", type="secondary", use_container_width=True)
-    with cols[1]:
-        if DEMO_AUDIO_PATH.exists():
-            demo_bytes = DEMO_AUDIO_PATH.read_bytes()
-            st.download_button(
-                "Download demo audio",
-                data=demo_bytes,
-                file_name="meeting_whisperer_demo.mp3",
-                mime="audio/mpeg",
-                use_container_width=True
-            )
-        else:
-            st.caption("Add Assets/demo_audio.mp3 to enable demo.")
+with st.expander("🎧 Try a demo meeting", expanded=True):
+    use_demo = st.button("Use demo audio", type="secondary", use_container_width=True)
+    st.caption("Loads a short sample meeting so you can try the app instantly — no upload needed.")
+
 
 # --- Upload area ---
 uploaded_file = st.file_uploader(
@@ -184,3 +172,4 @@ if file_bytes is not None:
             file_name="meeting_notes.md",
             mime="text/markdown"
         )
+
