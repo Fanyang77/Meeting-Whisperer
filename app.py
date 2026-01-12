@@ -1,6 +1,7 @@
 import os
 import base64
 from pathlib import Path
+from io import BytesIO
 
 from dotenv import load_dotenv
 import streamlit as st
@@ -9,9 +10,6 @@ from meeting_core import transcribe_audio, analyze_meeting, pretty_action_items
 
 # --------- Helper to build markdown export ---------
 def build_markdown_export(transcript: str, insights: dict) -> str:
-    """
-    Build a markdown export of the meeting notes.
-    """
     lines = []
     lines.append("# 💡 Meeting Whisperer Notes\n")
     lines.append("## Summary\n")
@@ -37,7 +35,6 @@ def build_markdown_export(transcript: str, insights: dict) -> str:
     lines.append("```")
 
     return "\n".join(lines)
-
 
 # --------- Page config MUST be first Streamlit call ---------
 st.set_page_config(
@@ -86,30 +83,64 @@ temperature = st.sidebar.slider("Creativity (for wording only)", 0.0, 1.0, 0.2)
 st.title("💡 Meeting Whisperer")
 st.caption("Turn messy meetings into clean notes and action items.")
 
+# --- Demo audio controls ---
+DEMO_AUDIO_PATH = Path("Assets/demo_audio.mp3")
+
+with st.expander("🎧 Demo audio (for recruiters)", expanded=True):
+    cols = st.columns([1, 1, 2])
+    with cols[0]:
+        use_demo = st.button("Use demo audio", type="secondary", use_container_width=True)
+    with cols[1]:
+        if DEMO_AUDIO_PATH.exists():
+            demo_bytes = DEMO_AUDIO_PATH.read_bytes()
+            st.download_button(
+                "Download demo audio",
+                data=demo_bytes,
+                file_name="meeting_whisperer_demo.mp3",
+                mime="audio/mpeg",
+                use_container_width=True
+            )
+        else:
+            st.caption("Add Assets/demo_audio.mp3 to enable demo.")
+
+# --- Upload area ---
 uploaded_file = st.file_uploader(
     "Upload audio (mp3, wav, m4a, etc.)",
     type=["mp3", "wav", "m4a", "mp4", "mpeg", "ogg"]
 )
 
-if uploaded_file is not None:
-    st.audio(uploaded_file)
+# --- Decide which audio to use ---
+file_bytes = None
+filename = None
+
+if use_demo and DEMO_AUDIO_PATH.exists():
+    file_bytes = DEMO_AUDIO_PATH.read_bytes()
+    filename = DEMO_AUDIO_PATH.name
+    st.success("Demo audio loaded. Click **Transcribe & Analyze**.")
+elif uploaded_file is not None:
+    file_bytes = uploaded_file.getvalue()   # ✅ don't consume stream
+    filename = uploaded_file.name
+
+# Preview audio
+if file_bytes is not None:
+    st.audio(file_bytes)
 
     if st.button("Transcribe & Analyze", type="primary"):
         # --- Transcription ---
         with st.spinner("Transcribing audio..."):
             transcript = transcribe_audio(
-                file_bytes=uploaded_file.read(),
-                filename=uploaded_file.name
+                file_bytes=file_bytes,
+                filename=filename
             )
 
-        # --- Transcript in its own scrollable window ---
+        # --- Transcript ---
         st.subheader("📝 Transcript")
         st.text_area(
             label="Transcript",
             value=transcript,
-            height=350,                   # adjust height as you like
-            disabled=True,                # read-only
-            label_visibility="collapsed"  # hide duplicate label text
+            height=350,
+            disabled=True,
+            label_visibility="collapsed"
         )
 
         # --- Meeting analysis ---
@@ -153,5 +184,3 @@ if uploaded_file is not None:
             file_name="meeting_notes.md",
             mime="text/markdown"
         )
-
-
